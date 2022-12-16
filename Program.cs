@@ -87,34 +87,41 @@ internal class Program
             }
             foreach (var blob in blobs)
             {
-                Console.WriteLine($"\t\tBlob Container: {blob.Data.Name}");
-
-                var blobContainerClient = new BlobContainerClient(connectionString, blob.Data.Name);
-                var blobItems = blobContainerClient.GetBlobsAsync();
-
-                await foreach (var blobItem in blobItems)
+                try
                 {
-                    try
+                    Console.WriteLine($"\t\tBlob Container: {blob.Data.Name}");
+
+                    var blobContainerClient = new BlobContainerClient(connectionString, blob.Data.Name);
+                    var blobItems = blobContainerClient.GetBlobsAsync();
+
+                    await foreach (var blobItem in blobItems)
                     {
-                        // Blob items are always fully nested, there's no "folder" to search in the middle
-                        // TODO: Investigate if we can (or should) scan the folders
-
-                        // Skip certain file extensions and paths to save resources
-                        if (Rules.ShouldSkipBlob(blobItem.Name))
+                        try
                         {
-                            continue;
+                            // Blob items are always fully nested, there's no "folder" to search in the middle
+                            // TODO: Investigate if we can (or should) scan the folders
+
+                            // Skip certain file extensions and paths to save resources
+                            if (Rules.ShouldSkipBlob(blobItem.Name))
+                            {
+                                continue;
+                            }
+
+                            // Look for anything cool left over
+                            if (Rules.ShouldRaiseBlob(blobItem.Name, out string interestReason))
+                            {
+                                Console.WriteLine($"\t\t\tFound interesting blob {interestReason}! ({blobItem.Name})");
+                            }
                         }
-
-                        // Look for anything cool left over
-                        if (Rules.ShouldRaiseBlob(blobItem.Name, out string interestReason))
+                        catch (Exception ex)
                         {
-                            Console.WriteLine($"\t\t\tFound interesting blob {interestReason}! ({blobItem.Name})");
+                            Console.WriteLine($"Something went wrong accessing blobs for container ({blob.Data.Name}): {ex.Message}");
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Something went wrong accessing blob ({blobItem.Name}): {ex.Message}");
-                    }
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine("Something went wrong getting blobs: " + ex.Message);
                 }
             }
         }
