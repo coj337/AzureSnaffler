@@ -13,6 +13,7 @@ using System.Threading;
 using Azure.ResourceManager.Storage.Models;
 using System.Reflection.Metadata;
 using Azure.Storage.Files.Shares;
+using Azure.Storage.Files.Shares.Models;
 
 namespace AzureSnaffler;
 
@@ -128,40 +129,47 @@ internal class Program
 
     static async Task ListDirectory(ShareDirectoryClient directoryClient)
     {
-        var filesAndFolders = directoryClient.GetFilesAndDirectoriesAsync();
-        await foreach (var file in filesAndFolders)
+        try
         {
-            var filePath = (string.IsNullOrEmpty(directoryClient.Path) ? "" : $"/{directoryClient.Path}") + "/" + file.Name;
-
-            if (file.IsDirectory)
+            var filesAndFolders = directoryClient.GetFilesAndDirectoriesAsync();
+            await foreach (var file in filesAndFolders)
             {
-                // Skip certain directories for opsec and speeeeed
-                if (Rules.ShouldSkipFolder(file.Name))
-                {
-                    continue;
-                }
-                if (Rules.ShouldRaiseFolder(file.Name))
-                {
-                    Console.WriteLine($"\t\t\tFound interesting folder! ({filePath})");
-                }
+                var filePath = (string.IsNullOrEmpty(directoryClient.Path) ? "" : $"/{directoryClient.Path}") + "/" + file.Name;
 
-                // Don't bother printing folders, just move on :)
-                await ListDirectory(directoryClient.GetSubdirectoryClient(file.Name));
-            }
-            else
-            {
-                // Skip certain file extensions and paths to save resources
-                if(Rules.ShouldSkipFile(filePath, file.Name))
+                if (file.IsDirectory)
                 {
-                    continue;
-                }
+                    // Skip certain directories for opsec and speeeeed
+                    if (Rules.ShouldSkipFolder(file.Name))
+                    {
+                        continue;
+                    }
+                    if (Rules.ShouldRaiseFolder(file.Name))
+                    {
+                        Console.WriteLine($"\t\t\tFound interesting folder! ({filePath})");
+                    }
 
-                // Look for anything cool left over
-                if(Rules.ShouldRaiseFile(filePath, file.Name, out string interestReason))
+                    // Don't bother printing folders, just move on :)
+                    await ListDirectory(directoryClient.GetSubdirectoryClient(file.Name));
+                }
+                else
                 {
-                    Console.WriteLine($"\t\t\tFound interesting file {interestReason}! ({filePath})");
+                    // Skip certain file extensions and paths to save resources
+                    if (Rules.ShouldSkipFile(filePath, file.Name))
+                    {
+                        continue;
+                    }
+
+                    // Look for anything cool left over
+                    if (Rules.ShouldRaiseFile(filePath, file.Name, out string interestReason))
+                    {
+                        Console.WriteLine($"\t\t\tFound interesting file {interestReason}! ({filePath})");
+                    }
                 }
             }
+        }
+        catch(RequestFailedException)
+        {
+            // This is fine, not allowed to see in there :)
         }
     }
 }
