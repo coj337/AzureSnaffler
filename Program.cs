@@ -107,61 +107,24 @@ internal class Program
 
                 await foreach (var blobItem in blobItems)
                 {
-                    Console.WriteLine($"\t\t\tBlob: {blobItem.Name}");
-                    // Look for magic files?
+                    // Blob items are always fully nested, there's no "folder" to search in the middle
+                    // TODO: Investigate if we can (or should) scan the folders
+
+                    // Skip certain file extensions and paths to save resources
+                    if (Rules.ShouldSkipBlob(blobItem.Name))
+                    {
+                        continue;
+                    }
+
+                    // Look for anything cool left over
+                    if (Rules.ShouldRaiseBlob(blobItem.Name, out string interestReason))
+                    {
+                        Console.WriteLine($"\t\t\tFound interesting blob {interestReason}! ({blobItem.Name})");
+                    }
                 }
             }
         }
     }
-
-    static List<string> ExcludedDirectories = new() { "IPC$", "PRINT$" };
-    static List<string> InterestingDirectories = new() { "C$", "ADMIN$", "SCCMCONTENTLIB$" };
-
-    static List<string> ExcludedExtensions = new() { 
-        ".bmp", ".eps", ".gif", ".ico", ".jfi", ".jfif", ".jif",
-        ".jpe", ".jpeg", ".jpg", ".png", ".psd", ".svg", ".tif",
-        ".tiff", ".webp", ".xcf", ".ttf", ".otf", ".lock", ".css",
-        ".less", ".admx", ".adml", ".xsd" 
-    };
-    static List<string> ExcludedFilepaths = new() { "jmxremote/.password/.template", "sceregvl/.inf" };
-    static List<string> InterestingFilenames = new() { 
-        "PASSW", "SECRET", "CREDENTIAL", "THYCOTIC", "CYBERARK", "ConsoleHost_history.txt", ".htpasswd",
-        "LocalSettings.php", "database.yml", ".secret_token.rb", "knife.rb", "carrierwave.rb", "omniauth.rb",
-        ".functions", ".exports", ".netrc", ".extra", ".npmrc", ".env", ".bashrc", ".profile", ".zshrc", ".bash_history",
-        ".zsh_history", ".sh_history", "zhistory", ".irb_history", "credentials.xml", "SensorConfiguration.json", ".var",
-        "Variables.dat", "Policy.xml", "unattend.xml", "Autounattend.xml", "proftpdpasswd", "filezilla.xml", "lsass.dmp",
-        "lsass.exe.dmp", "hiberfil.sys", "MEMORY.DMP", "running-config.cfg", "startup-config.cfg", "running-config", 
-        "startup-config", "cisco", "router", "firewall", "switch", "shadow", "pwd.db", "passwd", "Psmapp.cred", 
-        "psmgw.cred", "backup.key", "MasterReplicationUser.pass", "RecPrv.key", "ReplicationUser.pass", "Server.key",
-        "VaultEmergency.pass", "VaultUser.pass", "Vault.ini", "PADR.ini", "PARAgent.ini", "CACPMScanner.exe.config",
-        "PVConfiguration.xml", "NTDS.DIT", "SYSTEM", "SAM", "SECURITY", ".tugboat", "logins.json", "SqlStudio.bin",
-        ".mysql_history", ".psql_history", ".pgpass", ".dbeaver-data-sources.xml", "credentials-config.json", "dbvis.xml",
-        "robomongo.json", ".git-credentials", "passwords.txt", "password.txt", "pass.txt", "accounts.txt", "passwords.doc",
-        "passwords.docx", "pass.doc", "accounts.doc", "accounts.docx", "passwords.xls", "pass.xls", "accounts.xls", "pass.docx",
-        "passwords.xlsx", "pass.xlsx", "accounts.xlsx", "secrets.txt", "secrets.doc", "secrets.xls", "secrets.docx",
-        "secrets.xlsx", "recentservers.xml", "sftp-config.json", "mobaxterm.ini", "mobaxterm backup.zip", "confCons.xml",
-        "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "", ""
-    };
-    static List<string> InterestingExtensions = new() 
-    { 
-        ".psd1", ".psm1", ".ps1", ".aspx", ".ashx", ".asmx", ".asp", ".cshtml", ".cs", ".ascx", ".config" ,
-        ".bat", ".cmd", ".yaml", ".yml", ".toml", ".xml", ".json", ".ini", ".inf", ".cnf", ".conf", ".properties", 
-        ".env", ".dist", ".txt", ".sql", ".log", ".sqlite", ".sqlite3", ".fdb", ".tfvars", ".jsp", ".do", ".java",
-        ".cfm", ".js", ".cjs", ".mjs", ".ts", ".tsx", ".ls", ".es6", ".es", ".php", ".phtml", ".inc", ".php3",
-        ".php5", ".php7", ".pl", ".py", ".rb", ".vbs", ".vbe", ".wsf", ".wsc", ".hta", ".pem", ".der", ".pfx", ".pk12",
-        ".p12", ".pkcs12", ".mdf", ".sdf", ".sqldump", ".bak", ".wim", ".ova", ".ovf", ".cscfg", ".dmp", ".cred", ".pass",
-        ".pcap", ".cap", ".pcapng", ".kdbx", ".kdb", ".psafe3", ".kwallet", ".keychain", ".agilekeychain", ".rdg",
-        ".rtsz", ".rtsx", ".ovpn", ".rdp", ".ppk"
-    };
-    static List<string> InterestingFilepaths = new()
-    {
-        "jenkins/.plugins/.publish_over_ssh/.BapSshPublisherPlugin.xml",
-        "control/customsettings.ini",
-        ".aws",
-        "doctl/config.yaml",
-        ".ssh",
-        ".azure"
-    };
 
     static async Task ListDirectory(ShareDirectoryClient directoryClient)
     {
@@ -173,11 +136,11 @@ internal class Program
             if (file.IsDirectory)
             {
                 // Skip certain directories for opsec and speeeeed
-                if (ExcludedDirectories.Contains(file.Name.ToUpper()))
+                if (Rules.ShouldSkipFolder(file.Name))
                 {
                     continue;
                 }
-                if (InterestingDirectories.Contains(file.Name.ToUpper()))
+                if (Rules.ShouldRaiseFolder(file.Name))
                 {
                     Console.WriteLine($"\t\t\tFound interesting folder! ({filePath})");
                 }
@@ -187,32 +150,17 @@ internal class Program
             }
             else
             {
-                // Check filename
-                if(ExcludedExtensions.Any(f => file.Name.ToUpper().EndsWith(f.ToUpper())))
-                {
-                    continue;
-                }
-                if (ExcludedFilepaths.Any(f => filePath.ToUpper().EndsWith(f.ToUpper())))
+                // Skip certain file extensions and paths to save resources
+                if(Rules.ShouldSkipFile(filePath, file.Name))
                 {
                     continue;
                 }
 
-                if (InterestingFilepaths.Any(f => filePath.ToUpper().EndsWith(f.ToUpper())))
+                // Look for anything cool left over
+                if(Rules.ShouldRaiseFile(filePath, file.Name, out string interestReason))
                 {
-                    Console.WriteLine($"\t\t\tFound interesting file path! ({filePath})");
-
+                    Console.WriteLine($"\t\t\tFound interesting file {interestReason}! ({filePath})");
                 }
-                else if (InterestingFilenames.Any(f => f.ToUpper().Contains(file.Name.ToUpper())))
-                {
-                    Console.WriteLine($"\t\t\tFound interesting file name! ({filePath})");
-                }
-                else if (InterestingExtensions.Any(f => file.Name.ToUpper().EndsWith(f.ToUpper())))
-                {
-                    Console.WriteLine($"\t\t\tFound interesting file extension! ({filePath})");
-                }
-
-                // TODO: Extend this to blobs :)
-
             }
         }
     }
