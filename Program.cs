@@ -63,36 +63,22 @@ internal class Program
             }
             var connectionString = $"DefaultEndpointsProtocol=https;AccountName={storageAccount.Data.Name};AccountKey={accessKey.Value};EndpointSuffix=core.windows.net";
 
-            // Enumerate Tables
-            var tableService = storageAccount.GetTableService();
-            var tables = tableService.GetTables();
-            if (!tables.Any())
-            {
-                Console.WriteLine("\t\tNo tables...");
-            }
-            foreach (var table in tables)
-            {
-                Console.WriteLine($"\t\tTable: {table.Data.Name} {table.Data.TableName}");
-            }
-            // Look for columns with names like password?
+            // Go through all the tables looking for juicy things
+            //TODO: Uncomment this once snaffling logic is implemented
+            //EnumerateTables(storageAccount);
 
-            // List Disks
-            var fileService = storageAccount.GetFileService();
-            var shares = fileService.GetFileShares();
-            if (!shares.Any())
-            {
-                Console.WriteLine("\t\tNo shares...");
-            }
-            foreach (var share in shares)
-            {
-                Console.WriteLine($"\t\tShare: {share.Data.Name}");
-                var shareClient = new ShareClient(connectionString, share.Data.Name);
-                await ListDirectory(shareClient.GetRootDirectoryClient());
+            // Go through all the shares looking for juicy things
+            await EnumerateShares(storageAccount, connectionString);
 
-                
-            }
+            // Go through all the blobs looking for juicy things
+            await EnumerateBlobs(storageAccount, connectionString);
+        }
+    }
 
-            // List Blobs
+    static async Task EnumerateBlobs(StorageAccountResource storageAccount, string connectionString)
+    {
+        try
+        {
             var blobClient = storageAccount.GetBlobService();
             var blobs = blobClient.GetBlobContainers();
             if (!blobs.Any())
@@ -108,23 +94,86 @@ internal class Program
 
                 await foreach (var blobItem in blobItems)
                 {
-                    // Blob items are always fully nested, there's no "folder" to search in the middle
-                    // TODO: Investigate if we can (or should) scan the folders
-
-                    // Skip certain file extensions and paths to save resources
-                    if (Rules.ShouldSkipBlob(blobItem.Name))
+                    try
                     {
-                        continue;
+                        // Blob items are always fully nested, there's no "folder" to search in the middle
+                        // TODO: Investigate if we can (or should) scan the folders
+
+                        // Skip certain file extensions and paths to save resources
+                        if (Rules.ShouldSkipBlob(blobItem.Name))
+                        {
+                            continue;
+                        }
+
+                        // Look for anything cool left over
+                        if (Rules.ShouldRaiseBlob(blobItem.Name, out string interestReason))
+                        {
+                            Console.WriteLine($"\t\t\tFound interesting blob {interestReason}! ({blobItem.Name})");
+                        }
                     }
-
-                    // Look for anything cool left over
-                    if (Rules.ShouldRaiseBlob(blobItem.Name, out string interestReason))
+                    catch (Exception ex)
                     {
-                        Console.WriteLine($"\t\t\tFound interesting blob {interestReason}! ({blobItem.Name})");
+                        Console.WriteLine($"Something went wrong accessing blob ({blobItem.Name}): {ex.Message}");
                     }
                 }
             }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Something went wrong enumerating blobs: " + ex.Message);
+        }
+    }
+
+    static async Task EnumerateShares(StorageAccountResource storageAccount, string connectionString)
+    {
+        try
+        {
+            var fileService = storageAccount.GetFileService();
+            var shares = fileService.GetFileShares();
+            if (!shares.Any())
+            {
+                Console.WriteLine("\t\tNo shares...");
+            }
+            foreach (var share in shares)
+            {
+                try
+                {
+                    Console.WriteLine($"\t\tShare: {share.Data.Name}");
+                    var shareClient = new ShareClient(connectionString, share.Data.Name);
+                    await ListDirectory(shareClient.GetRootDirectoryClient());
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Something went wrong accessing share (" + share.Data.Name + "): " + ex.Message);
+                }
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Something went wrong enumerating shares: " + ex.Message);
+        }
+    }
+
+    static void EnumerateTables(StorageAccountResource storageAccount)
+    {
+        try
+        {
+            var tableService = storageAccount.GetTableService();
+            var tables = tableService.GetTables();
+            if (!tables.Any())
+            {
+                Console.WriteLine("\t\tNo tables...");
+            }
+            foreach (var table in tables)
+            {
+                Console.WriteLine($"\t\tTable: {table.Data.Name} {table.Data.TableName}");
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Something went wrong enumerating tables: " + ex.Message);
+        }
+        // Look for columns with names like password?
     }
 
     static async Task ListDirectory(ShareDirectoryClient directoryClient)
